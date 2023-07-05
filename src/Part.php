@@ -308,5 +308,12 @@ class Part {
         }
         return true;
     }
-
+    /**
+     * Get the part header
+     *
+     * @return Header|null
+     */
+    public function getHeader() {
+        return $this->header;
+    }
 }

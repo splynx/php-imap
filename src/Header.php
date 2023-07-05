@@ -378,38 +378,7 @@ class Header {
             return $str;
         }
 
-        // We don't need to do convertEncoding() if charset is ASCII (us-ascii):
-        //     ASCII is a subset of UTF-8, so all ASCII files are already UTF-8 encoded
-        //     https://stackoverflow.com/a/11303410
-        //
-        // us-ascii is the same as ASCII:
-        //     ASCII is the traditional name for the encoding system; the Internet Assigned Numbers Authority (IANA)
-        //     prefers the updated name US-ASCII, which clarifies that this system was developed in the US and
-        //     based on the typographical symbols predominantly in use there.
-        //     https://en.wikipedia.org/wiki/ASCII
-        //
-        // convertEncoding() function basically means convertToUtf8(), so when we convert ASCII string into UTF-8 it gets broken.
-        if (strtolower($from) == 'us-ascii' && $to == 'UTF-8') {
-            return $str;
-        }
-
-        try {
-            if (function_exists('iconv') && $from != 'UTF-7' && $to != 'UTF-7') {
-                return iconv($from, $to, $str);
-            } else {
-                if (!$from) {
-                    return mb_convert_encoding($str, $to);
-                }
-                return mb_convert_encoding($str, $to, $from);
-            }
-        } catch (\Exception $e) {
-            if (strstr($from, '-')) {
-                $from = str_replace('-', '', $from);
-                return $this->convertEncoding($str, $from, $to);
-            } else {
-                return $str;
-            }
-        }
+        return EncodingAliases::convert($str, $from, $to);
     }
 
     /**
@@ -451,7 +420,7 @@ class Header {
      *
      * @return mixed
      */
-    private function decode($value) {
+    public function decode($value) {
         if (is_array($value)) {
             return $this->decodeArray($value);
         }
@@ -459,26 +428,19 @@ class Header {
         $decoder = $this->config['decoder']['message'];
 
         if ($value !== null) {
-            $is_utf8_base = $this->is_uft8($value);
-
             if ($decoder === 'utf-8' && extension_loaded('imap')) {
-                $value = \imap_utf8($value);
-                $is_utf8_base = $this->is_uft8($value);
-                if ($is_utf8_base) {
-                    $value = mb_decode_mimeheader($value);
+                $decoded_values = $this->mime_header_decode($value);
+                $tempValue = "";
+                foreach ($decoded_values as $decoded_value) {
+                    $tempValue .= $this->convertEncoding($decoded_value->text, $decoded_value->charset);
                 }
-                if ($this->notDecoded($original_value, $value)) {
-                    $decoded_value = $this->mime_header_decode($value);
-                    if (count($decoded_value) > 0) {
-                        if (property_exists($decoded_value[0], "text")) {
-                            $value = $decoded_value[0]->text;
-                        }
-                    }
+                if ($tempValue) {
+                    $value = $tempValue;
+                } else {
+                    $value = \imap_utf8($value);
                 }
-            } elseif ($decoder === 'iconv' && $is_utf8_base) {
-                $value = iconv_mime_decode($value);
-            } elseif ($is_utf8_base) {
-                $value = mb_decode_mimeheader($value);
+            } elseif ($decoder === 'iconv' && $this->is_uft8($value)) {
+                $value = iconv_mime_decode($value, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, "UTF-8");
             }
 
             if ($this->is_uft8($value)) {
