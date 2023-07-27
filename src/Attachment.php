@@ -255,14 +255,38 @@ class Attachment {
      * @param $name
      */
     public function setName($name) {
-        $decoder = $this->config['decoder']['attachment'];
+        $this->name = $this->decodeName($name);
+    }
+
+    /**
+     * Decode a given name
+     * @param string $name
+     */
+    public function decodeName($name): string {
         if ($name !== null) {
-            if($decoder === 'utf-8' && extension_loaded('imap')) {
-                $this->name = \imap_utf8($name);
-            }else{
-                $this->name = mb_decode_mimeheader($name);
+            if (str_contains($name, "''")) {
+                $parts = explode("''", $name);
+                if (EncodingAliases::has($parts[0])) {
+                    $name = implode("''", array_slice($parts, 1));
+                }
             }
+
+            $decoder = $this->config['decoder']['message'];
+            if($decoder === 'utf-8' && extension_loaded('imap')) {
+                $name = \imap_utf8($name);
+            }
+
+            if (preg_match('/=\?([^?]+)\?(Q|B)\?(.+)\?=/i', $name, $matches)) {
+                $name = $this->part->getHeader()->decode($name);
+            }
+
+            // check if $name is url encoded
+            if (preg_match('/%[0-9A-F]{2}/i', $name)) {
+                $name = urldecode($name);
+            }
+            return $name;
         }
+        return "";
     }
 
     /**
